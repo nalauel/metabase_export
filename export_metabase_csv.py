@@ -29,6 +29,8 @@ from datetime import datetime
 from urllib.parse import urlencode
 import requests
 from dotenv import load_dotenv
+from pathlib import Path
+import shutil
 
 load_dotenv()  # load .env if present
 
@@ -70,6 +72,24 @@ def fetch_csv(host: str, auth_headers: dict, card_id: int, params: dict | None) 
 def safe_filename(name: str) -> str:
     return "".join(c if c.isalnum() or c in ("-","_",".") else "_" for c in name)
 
+def backup_existing(out_path: str, backup_dir: str | None = None) -> str | None:
+    """Se out_path existir, move para <nome>_backup_YYYYmmdd-HHMMSS<ext>.
+       Retorna o caminho do backup criado (ou None se não havia o arquivo)."""
+    p = Path(out_path)
+    if not p.exists():
+        return None
+
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target_dir = Path(backup_dir) if backup_dir else p.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    backup_name = f"{p.stem}_backup_{ts}{p.suffix}"
+    backup_path = target_dir / backup_name
+    shutil.move(str(p), str(backup_path))
+    print(f"Backup criado: {backup_path}")
+    return str(backup_path)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Export CSVs from Metabase cards.")
     parser.add_argument("--card-id", type=int, action="append", required=True, help="Metabase card (question) ID. Repeatable.")
@@ -78,6 +98,8 @@ def main():
     parser.add_argument("--no-timestamp", action="store_true", help="Do not include timestamp in filenames.")
     parser.add_argument("--use-api-key", action="store_true", help="Use METABASE_API_KEY auth instead of username/password.")
     parser.add_argument("--retries", type=int, default=2, help="Number of retries on failure.")
+    parser.add_argument("--backup", action="store_true", help="Se o arquivo de saída existir, faz backup com timestamp antes de sobrescrever.")
+    parser.add_argument("--backup-dir", help="Diretório para backups (padrão: mesma pasta do arquivo). Será criado se não existir.")
     args = parser.parse_args()
 
     host = get_env("METABASE_HOST")
@@ -135,6 +157,10 @@ def main():
             fname = f"{safe_filename(base)}.csv"
 
         out_path = os.path.join(out_dir, fname)
+
+        if args.backup:
+            backup_existing(out_path, args.backup_dir)
+
         with open(out_path, "wb") as f:
             f.write(content)
         print(f"Saved: {out_path}")
