@@ -110,6 +110,11 @@ def main():
     parser.add_argument("--backup", action="store_true", help="Se o arquivo de saída existir, faz backup com timestamp antes de sobrescrever.")
     parser.add_argument("--backup-dir", help="Diretório para backups (padrão: mesma pasta do arquivo). Será criado se não existir.")
     parser.add_argument("--format-rows", dest="format_rows", action="store_true", help="Exporta com formatação do Metabase")
+    parser.add_argument("--raw", dest="format_rows", action="store_false", help="Valores brutos (0.12 em vez de 12%).")
+    parser.set_defaults(format_rows=None)
+    parser.add_argument("--locale", default=None, help="Locale para formatação no Metabase (ex.: pt-BR).")
+    
+
     args = parser.parse_args()
 
     host = get_env("METABASE_HOST")
@@ -139,6 +144,9 @@ def main():
             die("Provide METABASE_USERNAME & METABASE_PASSWORD or use --use-api-key with METABASE_API_KEY set.")
         session_token = login_with_password(host, username, password)
         headers = {"X-Metabase-Session": session_token}
+        if args.locale:
+            headers["Accept-Language"] = args.locale      # ajuda o servidor a formatar números/datas
+            headers["X-Metabase-Locale"] = args.locale 
 
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
 
