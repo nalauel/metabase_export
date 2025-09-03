@@ -100,6 +100,7 @@ def main():
     parser.add_argument("--retries", type=int, default=2, help="Number of retries on failure.")
     parser.add_argument("--backup", action="store_true", help="Se o arquivo de saída existir, faz backup com timestamp antes de sobrescrever.")
     parser.add_argument("--backup-dir", help="Diretório para backups (padrão: mesma pasta do arquivo). Será criado se não existir.")
+    parser.add_argument("--format-rows", dest="format_rows", action="store_true", help="Exporta com formatação do Metabase")
     args = parser.parse_args()
 
     host = get_env("METABASE_HOST")
