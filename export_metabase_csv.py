@@ -58,9 +58,18 @@ def login_with_password(host: str, username: str, password: str) -> str:
         die("Login response missing session id.")
     return token  # session token
 
-def fetch_csv(host: str, auth_headers: dict, card_id: int, params: dict | None) -> bytes:
+def fetch_csv(host: str, auth_headers: dict, card_id: int, params: dict | None, format_rows: bool | None) -> bytes:
     base = f"{host.rstrip('/')}/api/card/{card_id}/query/csv"
-    url = f"{base}?{urlencode(params, doseq=True)}" if params else base
+    q = {}
+    if params:
+        # params do card vão no corpo (POST) em algumas versões; mas como você já usa POST sem body,
+        # aqui vamos só tratar format_rows via query string:
+        pass
+    if format_rows is not None:
+        q["format_rows"] = "true" if format_rows else "false"
+
+    from urllib.parse import urlencode
+    url = f"{base}?{urlencode(q)}" if q else base
     try:
         resp = requests.post(url, headers=auth_headers, timeout=300)
     except Exception as e:
@@ -138,7 +147,7 @@ def main():
         last_err = None
         for attempt in range(args.retries + 1):
             try:
-                content = fetch_csv(host, headers, card_id, params or None)
+                content = fetch_csv(host, headers, card_id, params or None, args.format_rows)
                 break
             except SystemExit:
                 raise
