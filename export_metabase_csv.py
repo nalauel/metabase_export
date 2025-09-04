@@ -256,7 +256,8 @@ def main():
             )
         
         with open(out_path, "wb") as f:
-            f.write(content)
+            f.write(data_to_write)
+
         print(f"Saved: {out_path}")
 
     print("Done.")
