@@ -31,6 +31,67 @@ import requests
 from dotenv import load_dotenv
 from pathlib import Path
 import shutil
+import csv, io, re
+
+
+_num_re = re.compile(r"""
+    ^\s*
+    (?P<sign>[-+])?
+    (?P<int>\d{1,3}(?:,\d{3})*|\d+)
+    (?P<dec>\.\d+)?                # .56
+    (?P<pct>\%)?                   # opcional '%'
+    \s*$
+""", re.X)
+
+def _en_to_pt_number(txt: str) -> str:
+    """
+    Converte '1,234.56' -> '1.234,56'
+    Preserva sinal e '%' no fim.
+    """
+    m = _num_re.match(txt)
+    if not m:
+        return txt
+    sign = m.group('sign') or ''
+    pct  = m.group('pct') or ''
+    # remove vírgulas de milhar en-US
+    base = (m.group('int') or '') + (m.group('dec') or '')
+    base = base.replace(',', '')
+    try:
+        val = float(base)
+    except ValueError:
+        return txt
+    # 2 casas decimais por padrão para CSV "financeiro"
+    s = f"{val:,.2f}"               # 1,234.56
+    s = s.replace(",", "X").replace(".", ",").replace("X", ".")  # 1.234,56
+    return f"{sign}{s}{pct}"
+
+def rewrite_csv_bytes(csv_bytes: bytes, quote_all: bool, decimal_comma: bool, delimiter: str, add_bom: bool) -> bytes:
+    """
+    Regrava CSV: aspas (QUOTE_ALL), vírgula decimal, delimitador e BOM.
+    """
+    text = csv_bytes.decode("utf-8", errors="replace")
+    rows = list(csv.reader(io.StringIO(text)))  # lê no formato original
+
+    if decimal_comma:
+        for r_i, row in enumerate(rows):
+            new_row = []
+            for cell in row:
+                c = cell.strip()
+                # tenta converter números puros e percentuais
+                new_cell = _en_to_pt_number(c)
+                new_row.append(new_cell)
+            rows[r_i] = new_row
+
+    out_io = io.StringIO()
+    quoting = csv.QUOTE_ALL if quote_all else csv.QUOTE_MINIMAL
+    writer = csv.writer(out_io, delimiter=delimiter, quoting=quoting, lineterminator="\n")
+    for r in rows:
+        writer.writerow(r)
+
+    data = out_io.getvalue().encode("utf-8")
+    if add_bom:
+        data = b"\xef\xbb\xbf" + data
+    return data
 
 load_dotenv()  # load .env if present
 
@@ -112,6 +173,10 @@ def main():
     parser.add_argument("--format-rows", dest="format_rows", action="store_true", help="Exporta com formatação do Metabase")
     parser.add_argument("--raw", dest="format_rows", action="store_false", help="Valores brutos (0.12 em vez de 12%).")
     parser.set_defaults(format_rows=None)
+    parser.add_argument("--quote-all", action="store_true", help="Regrava o CSV com aspas em todos os campos.")
+    parser.add_argument("--decimal-comma", action="store_true",help="Converte 1234.56 -> 1.234,56 ao regravar o CSV (inclui números com %).")
+    parser.add_argument("--delimiter", default=",",help="Separador ao regravar o CSV (padrão: ,). Use ';' para Excel PT-BR.")
+    parser.add_argument("--bom", action="store_true",help="Adiciona BOM UTF-8 no início do arquivo (Excel PT-BR).")
     parser.add_argument("--locale", default=None, help="Locale para formatação no Metabase (ex.: pt-BR).")
     
 
@@ -179,6 +244,17 @@ def main():
         if args.backup:
             backup_existing(out_path, args.backup_dir)
 
+        
+        data_to_write = content
+        if args.quote_all or args.decimal_comma or args.delimiter != "," or args.bom:
+            data_to_write = rewrite_csv_bytes(
+                content,
+                quote_all=args.quote_all,
+                decimal_comma=args.decimal_comma,
+                delimiter=args.delimiter,
+                add_bom=args.bom,
+            )
+        
         with open(out_path, "wb") as f:
             f.write(content)
         print(f"Saved: {out_path}")
